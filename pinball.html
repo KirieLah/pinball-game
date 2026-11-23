@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pocket Pinball</title>
+<style>
+  html, body { margin: 0; min-height: 100%; background: #0b1016; overflow: hidden; }
+  body { display: flex; justify-content: center; align-items: center; }
+  canvas { display: block; width: auto; height: 100vh; height: 100dvh; max-width: 100vw; max-height: 100vh; max-height: 100dvh; aspect-ratio: 480 / 800; touch-action: none; }
+</style>
+</head>
+<body>
+<canvas id="c" width="480" height="800"></canvas>
+<script>
+// ============================================================
+// POCKET PINBALL - baseline version
+// Sections: 1) setup  2) table layout  3) input  4) physics  5) game flow  6) drawing  7) main loop
+// ============================================================
+
+// ---------- 1) SETUP ----------
+const W = 480, H = 800;
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+const GRAVITY = 600;        // pixels per second squared (try 600 for a floatier ball)
+const MAX_SPEED = 1500;     // speed cap so the ball can't tunnel through walls
+const SUBSTEPS = 8;         // physics steps per frame, more = more accurate
+const LAUNCH_SPEED = 1250;  // how hard the plunger shoots the ball
+const PLUNGER_GATE_Y = 200;
+
+const ball = { x: 445, y: 750, vx: 0, vy: 0, r: 8 };
+
+let state = 'title';        // 'title' | 'ready' | 'play' | 'over'
+let score = 0, balls = 3, best = 0, bonus = false;
+const hit = new Set();      // which bumpers were hit since the last bonus
+
+try { best = +localStorage.getItem('pocketPinballBest') || 0; } catch (e) {}
+
+// ---------- 2) TABLE LAYOUT ----------
+// Walls are line segments: [x1, y1, x2, y2]
+const walls = [
+  [20, 60, 20, 650],     // left wall
+  [20, 60, 60, 10],      // top-left corner
+  [60, 10, 390, 10],     // top wall
+  [390, 10, 460, 90],    // top-right deflector (turns the launched ball into the table)
+  [460, 90, 460, 770],   // right wall
+  [430, 200, 430, 770],  // wall between the table and the plunger lane
+  [430, 770, 460, 770],  // lane floor
+  [20, 650, 130, 722],   // left slope down to the flipper
+  [430, 650, 330, 722],  // right slope down to the flipper
+  [20, 480, 100, 540],   // left angled guide
+  [430, 480, 360, 540],  // right angled guide
+];
+
+const bumpers = [
+  { x: 240, y: 230, r: 28 },
+  { x: 170, y: 340, r: 28 },
+  { x: 310, y: 340, r: 28 },
+];
+
+// Flippers: sg = +1 for left (points right), -1 for right (points left).
+// angle 0.5 = resting (tip down), angle -0.5 = raised.
+const REST = 0.5, UP = -0.5, FLIP_SPEED = 20, FLIP_LEN = 80;
+const flippers = [
+  { px: 130, py: 722, sg: 1,  a: REST, omega: 0 },
+  { px: 330, py: 722, sg: -1, a: REST, omega: 0 },
+];
+
+// ---------- 3) INPUT ----------
+const keys = new Set();
+const touches = new Map(); // pointerId -> 'L' or 'R'
+
+function leftDown()  { return keys.has('ArrowLeft')  || keys.has('KeyZ') || [...touches.values()].includes('L'); }
+function rightDown() { return keys.has('ArrowRight') || keys.has('KeyM') || [...touches.values()].includes('R'); }
+
+window.addEventListener('keydown', e => {
+  if (['ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
+  if (e.repeat) return;
+  keys.add(e.code);
+  if (e.code === 'Space') action();
+});
+window.addEventListener('keyup', e => keys.delete(e.code));
+
+canvas.addEventListener('pointerdown', e => {
+  const rect = canvas.getBoundingClientRect();
+  touches.set(e.pointerId, (e.clientX - rect.left) < rect.width / 2 ? 'L' : 'R');
+  action();
+});
+const endTouch = e => touches.delete(e.pointerId);
+canvas.addEventListener('pointerup', endTouch);
+canvas.addEventListener('pointercancel', endTouch);
+
+// Space / tap: starts the game, launches the ball, or restarts after game over
+function action() {
+  if (state === 'title' || state === 'over') newGame();
+  else if (state === 'ready') launch();
+}
+
+// ---------- 4) PHYSICS ----------
+function closestPoint(ax, ay, bx, by, px, py) {
+  const abx = bx - ax, aby = by - ay;
+  let t = ((px - ax) * abx + (py - ay) * aby) / (abx * abx + aby * aby);
+  t = Math.max(0, Math.min(1, t));
+  return [ax + abx * t, ay + aby * t];
+}
+
+// Bounce the ball off a line segment. hw = half thickness, e = bounciness,
+// surfaceVel = optional function giving the segment's own velocity (used by moving flippers).
+function collideSegment(ax, ay, bx, by, hw, e, surfaceVel) {
+  const [cx, cy] = closestPoint(ax, ay, bx, by, ball.x, ball.y);
+  const dx = ball.x - cx, dy = ball.y - cy;
+  const d = Math.hypot(dx, dy);
+  const R = ball.r + hw;
+  if (d >= R || d === 0) return;
+  const nx = dx / d, ny = dy / d;
+  ball.x = cx + nx * R;                  // push the ball out of the wall
+  ball.y = cy + ny * R;
+  const [sx, sy] = surfaceVel ? surfaceVel(cx, cy) : [0, 0];
+  let rvx = ball.vx - sx, rvy = ball.vy - sy;
+  const vn = rvx * nx + rvy * ny;
+  if (vn < 0) {                          // only bounce if moving into the wall
+    rvx -= (1 + e) * vn * nx;
+    rvy -= (1 + e) * vn * ny;
+    ball.vx = rvx + sx;
+    ball.vy = rvy + sy;
+  }
+}
+
+function flipperTip(f) {
+  return [f.px + f.sg * FLIP_LEN * Math.cos(f.a), f.py + FLIP_LEN * Math.sin(f.a)];
+}
+
+function updateFlippers(dt) {
+  const pressed = [leftDown(), rightDown()];
+  flippers.forEach((f, i) => {
+    const target = pressed[i] ? UP : REST;
+    const step = FLIP_SPEED * dt;
+    if (Math.abs(target - f.a) <= step) { f.a = target; f.omega = 0; }
+    else { const dir = Math.sign(target - f.a); f.a += dir * step; f.omega = dir * FLIP_SPEED; }
+  });
+}
+
+function collideBumpers() {
+  bumpers.forEach((b, i) => {
+    const dx = ball.x - b.x, dy = ball.y - b.y;
+    const d = Math.hypot(dx, dy);
+    const R = ball.r + b.r;
+    if (d >= R || d === 0) return;
+    const nx = dx / d, ny = dy / d;
+    ball.x = b.x + nx * R;
+    ball.y = b.y + ny * R;
+    const vn = ball.vx * nx + ball.vy * ny;
+    if (vn < 0) { ball.vx -= 2 * vn * nx; ball.vy -= 2 * vn * ny; }
+    // Give every bumper hit a kick so it feels bouncy
+    const sp = Math.hypot(ball.vx, ball.vy);
+    const kick = Math.max(sp, 450) / (sp || 1);
+    ball.vx *= kick; ball.vy *= kick;
+    scoreBumper(i);
+  });
+}
+
+function scoreBumper(i) {
+  if (bonus) { score += 500; bonus = false; return; }
+  score += 100;
+  hit.add(i);
+  if (hit.size === bumpers.length) { bonus = true; hit.clear(); }
+}
+
+function physicsStep(dt) {
+  updateFlippers(dt);
+  const previousX = ball.x, previousY = ball.y;
+  ball.vy += GRAVITY * dt;
+  const sp = Math.hypot(ball.vx, ball.vy);
+  if (sp > MAX_SPEED) { ball.vx *= MAX_SPEED / sp; ball.vy *= MAX_SPEED / sp; }
+  ball.x += ball.vx * dt;
+  ball.y += ball.vy * dt;
+
+  const gateContactY = PLUNGER_GATE_Y - ball.r;
+  if (previousY < gateContactY && ball.y >= gateContactY && ball.vy > 0) {
+    const crossingTime = (gateContactY - previousY) / (ball.y - previousY);
+    const crossingX = previousX + (ball.x - previousX) * crossingTime;
+    if (crossingX > 430 && crossingX < 460) {
+      ball.y = gateContactY;
+      ball.vy *= -0.5;
+    }
+  }
+
+  for (const w of walls) collideSegment(w[0], w[1], w[2], w[3], 2, 0.5);
+  for (const f of flippers) {
+    const [tx, ty] = flipperTip(f);
+    collideSegment(f.px, f.py, tx, ty, 7, 0.4, (cx, cy) => {
+      const dx = cx - f.px, dy = cy - f.py;
+      return [f.sg * f.omega * -dy, f.sg * f.omega * dx];
+    });
+  }
+  collideBumpers();
+}
+
+// ---------- 5) GAME FLOW ----------
+function resetBall() {
+  ball.x = 445; ball.y = 750; ball.vx = 0; ball.vy = 0;
+  state = 'ready';
+}
+
+function newGame() {
+  score = 0; balls = 3; bonus = false; hit.clear();
+  resetBall();
+}
+
+function launch() {
+  ball.vy = -LAUNCH_SPEED;
+  state = 'play';
+}
+
+function ballLost() {
+  balls--;
+  bonus = false; hit.clear();
+  if (balls <= 0) {
+    state = 'over';
+    if (score > best) {
+      best = score;
+      try { localStorage.setItem('pocketPinballBest', best); } catch (e) {}
+    }
+  } else {
+    resetBall();
+  }
+}
+
+function update(dt) {
+  if (state === 'play') {
+    for (let i = 0; i < SUBSTEPS; i++) physicsStep(dt / SUBSTEPS);
+    // Ball fell back into the plunger lane and stopped: let the player launch again
+    if (ball.x > 431 && ball.y > 600 && Math.hypot(ball.vx, ball.vy) < 40) resetBall();
+    if (ball.y > H + 20) ballLost();
+  } else {
+    updateFlippers(dt); // flippers still move on the title and ready screens
+  }
+}
+
+// ---------- 6) DRAWING ----------
+function draw() {
+  ctx.fillStyle = '#0b1016';
+  ctx.fillRect(0, 0, W, H);
+
+  // table walls
+  ctx.strokeStyle = '#6fa8ff';
+  ctx.lineWidth = 4;
+  ctx.lineCap = 'round';
+  for (const w of walls) { ctx.beginPath(); ctx.moveTo(w[0], w[1]); ctx.lineTo(w[2], w[3]); ctx.stroke(); }
+
+  // bumpers (filled once hit toward a bonus)
+  bumpers.forEach((b, i) => {
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+    ctx.fillStyle = bonus ? '#ffd166' : hit.has(i) ? '#ff8fab' : '#c9184a';
+    ctx.fill();
+    ctx.lineWidth = 3; ctx.strokeStyle = '#fff'; ctx.stroke();
+  });
+
+  // flippers
+  ctx.strokeStyle = '#ffd166'; ctx.lineWidth = 14;
+  for (const f of flippers) {
+    const [tx, ty] = flipperTip(f);
+    ctx.beginPath(); ctx.moveTo(f.px, f.py); ctx.lineTo(tx, ty); ctx.stroke();
+  }
+
+  // ball
+  ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+  ctx.fillStyle = '#fff'; ctx.fill();
+
+  // HUD
+  ctx.fillStyle = '#e8eef5'; ctx.font = 'bold 22px system-ui, sans-serif';
+  ctx.textAlign = 'left';  ctx.fillText('Score ' + score, 36, 46);
+  ctx.textAlign = 'right'; ctx.fillText('Balls ' + balls, 420, 46);
+  if (bonus) { ctx.textAlign = 'center'; ctx.fillStyle = '#ffd166'; ctx.fillText('BONUS: next hit is 500', 240, 110); }
+
+  // messages
+  if (state === 'title') overlay('Pocket Pinball', 'Press Space or tap to start', 'Left/Right: Z and M or arrow keys, or tap left/right side');
+  if (state === 'over')  overlay('Game over', 'Score ' + score + '   Best ' + best, 'Press Space or tap to play again');
+  if (state === 'ready') { ctx.textAlign = 'center'; ctx.fillStyle = '#9fb3c8'; ctx.font = '16px system-ui, sans-serif'; ctx.fillText('Space or tap to launch', 240, 600); }
+}
+
+function overlay(title, line1, line2) {
+  ctx.fillStyle = 'rgba(11,16,22,0.82)'; ctx.fillRect(40, 270, 400, 200);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#fff';    ctx.font = 'bold 34px system-ui, sans-serif'; ctx.fillText(title, 240, 330);
+  ctx.fillStyle = '#ffd166'; ctx.font = '20px system-ui, sans-serif';      ctx.fillText(line1, 240, 380);
+  ctx.fillStyle = '#9fb3c8'; ctx.font = '14px system-ui, sans-serif';      ctx.fillText(line2, 240, 425);
+}
+
+// ---------- 7) MAIN LOOP ----------
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min((now - last) / 1000, 1 / 30); // cap so a tab switch doesn't cause a huge jump
+  last = now;
+  update(dt);
+  draw();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
