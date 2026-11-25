@@ -14,7 +14,7 @@
   #game-panel h2 { margin: 16px 0 8px; color: #9fb3c8; font-size: 14px; }
   #game-panel p { margin: 6px 0; color: #9fb3c8; }
   .panel-levels { display: grid; gap: 8px; margin: 14px 0; }
-  .panel-level-button { width: 100%; padding: 10px 12px; border: 1px solid #6fa8ff; border-radius: 6px; background: #172433; color: #ffd166; font: inherit; font-weight: 700; text-align: left; touch-action: manipulation; }
+  .panel-level-button { box-sizing: border-box; width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid #6fa8ff; border-radius: 6px; background: #172433; color: #ffd166; font: inherit; font-weight: 700; text-align: left; touch-action: manipulation; }
   .panel-level-button:hover, .panel-level-button:focus-visible { background: #24384d; outline: 2px solid #ffd166; outline-offset: 2px; }
   .panel-level-button span { display: block; margin-top: 2px; color: #e8eef5; font-size: 12px; font-weight: 400; }
   .panel-score { margin: 12px 0; padding: 10px; border: 1px solid #46617f; border-radius: 6px; }
@@ -31,6 +31,7 @@
   .game-shell.level-select .panel-levels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 0; }
   .game-shell.level-select .panel-level-button { min-height: 72px; }
   .game-shell.level-select .panel-level-button span { color: #9fb3c8; }
+  .game-shell.level-select .panel-level-button .level-high-score { overflow-wrap: anywhere; }
   .game-shell.in-game #game-panel .panel-board { margin-top: 8px; }
   .dialog-backdrop { position: fixed; inset: 0; z-index: 2; display: grid; place-items: center; overflow: auto; padding: 16px; background: rgba(3, 7, 12, 0.82); font: 16px system-ui, sans-serif; color: #e8eef5; }
   .dialog-backdrop[hidden] { display: none; }
@@ -174,15 +175,15 @@ function renderGamePanel() {
     content += '<div class="panel-levels" aria-label="Choose a level">' +
       MENU_BUTTONS.map(button => {
         const entries = leaderboards[button.level];
-        const highScore = entries[0]?.score;
+        const topEntry = entries[0];
         const scoreLabel = leaderboardStatus !== 'ready'
           ? (leaderboardStatus === 'loading' ? 'Loading high score...' : 'High score unavailable')
-          : highScore === undefined
+          : topEntry === undefined
             ? 'No high score yet'
-            : 'High score: ' + highScore.toLocaleString();
+            : 'High score: ' + escapeHtml(topEntry.name) + ' · ' + topEntry.score.toLocaleString();
         return '<button class="panel-level-button" type="button" data-level="' + button.level + '"' +
           (state === 'over' ? ' disabled' : '') + '>' +
-          'Play level ' + button.level + '<span>' + bumperLayouts[button.level - 1].length +
+          'Play level ' + button.level + '<span class="level-high-score">' + bumperLayouts[button.level - 1].length +
           ' bumpers · ' + scoreLabel + '</span></button>';
       }).join('') + '</div>';
   } else {
