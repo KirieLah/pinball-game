@@ -1,0 +1,25 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "pinbal-score-api",
+  "main": "src/index.js",
+  "compatibility_date": "2026-11-25",
+  "workers_dev": true,
+  "preview_urls": false,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "pinball-score",
+      "database_id": "bb750b6b-e8f3-4995-b044-aeeec9bf9fae"
+    }
+  ],
+  "ratelimits": [
+    {
+      "name": "SUBMISSION_LIMITER",
+      "namespace_id": "7319052",
+      "simple": {
+        "limit": 10,
+        "period": 60
+      }
+    }
+  ]
+}

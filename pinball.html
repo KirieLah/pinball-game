@@ -8,10 +8,33 @@
   html, body { margin: 0; min-height: 100%; background: #0b1016; overflow: hidden; }
   body { display: flex; justify-content: center; align-items: center; }
   canvas { display: block; width: auto; height: 100vh; height: 100dvh; max-width: 100vw; max-height: 100vh; max-height: 100dvh; aspect-ratio: 480 / 800; touch-action: none; }
+  .dialog-backdrop { position: fixed; inset: 0; z-index: 2; display: grid; place-items: center; overflow: auto; padding: 16px; background: rgba(3, 7, 12, 0.82); font: 16px system-ui, sans-serif; color: #e8eef5; }
+  .dialog-backdrop[hidden] { display: none; }
+  .score-dialog { box-sizing: border-box; width: min(100%, 360px); max-height: 100%; overflow: auto; padding: 24px; border: 2px solid #6fa8ff; border-radius: 12px; background: #111b26; }
+  .score-dialog h1 { margin: 0 0 10px; color: #ffd166; font-size: 24px; }
+  .score-dialog p { margin: 0 0 16px; line-height: 1.4; }
+  .score-dialog label { display: block; margin-bottom: 6px; }
+  .score-dialog input { box-sizing: border-box; width: 100%; margin-bottom: 14px; padding: 10px; border: 1px solid #6fa8ff; border-radius: 6px; background: #0b1016; color: #fff; font: inherit; }
+  .score-dialog button { margin: 12px 8px 0 0; padding: 10px 14px; border: 0; border-radius: 6px; background: #ffd166; color: #111; font: inherit; font-weight: 700; }
+  .score-dialog button:disabled { opacity: 0.5; }
+  #submission-status { min-height: 1.4em; color: #9fb3c8; }
 </style>
 </head>
 <body>
 <canvas id="c" width="480" height="800"></canvas>
+<div id="score-dialog" class="dialog-backdrop" hidden>
+  <form id="score-form" class="score-dialog">
+    <h1>New high score!</h1>
+    <p id="qualifying-score"></p>
+    <label for="player-name">Name (1-16 letters, numbers, spaces, _ or -)</label>
+    <input id="player-name" name="name" maxlength="16" pattern="[A-Za-z0-9 _\-]{1,16}" autocomplete="nickname" required>
+    <div id="turnstile-widget"></div>
+    <p id="submission-status" role="status" aria-live="polite"></p>
+    <button id="submit-score" type="submit" disabled>Submit score</button>
+    <button id="skip-score" type="button">Not now</button>
+  </form>
+</div>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
 <script>
 // ============================================================
 // POCKET PINBALL - baseline version
@@ -22,6 +45,8 @@
 const W = 480, H = 800;
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
+const LEADERBOARD_API = 'https://pinbal-score-api.eirik-halseth.workers.dev/api/scores';
+const TURNSTILE_SITE_KEY = '0x4AAAAAAGTGlzjnKP75KS1H';
 
 const GRAVITY = 600;        // pixels per second squared (try 600 for a floatier ball)
 const MAX_SPEED = 1500;     // speed cap so the ball can't tunnel through walls
@@ -35,8 +60,133 @@ let state = 'title';        // 'title' | 'ready' | 'play' | 'over'
 let level = 1;
 let score = 0, balls = 3, best = 0, bonus = false;
 const hit = new Set();      // which bumpers were hit since the last bonus
+let leaderboards = { 1: [], 2: [], 3: [] };
+let leaderboardStatus = 'loading';
+let pendingSubmission = null;
+let turnstileWidgetId = null;
+let turnstileToken = '';
 
 try { best = +localStorage.getItem('pocketPinballBest') || 0; } catch (e) {}
+
+async function refreshLeaderboards() {
+  leaderboardStatus = 'loading';
+  try {
+    const response = await fetch(LEADERBOARD_API);
+    if (!response.ok) throw new Error('Leaderboard request failed (' + response.status + ')');
+    const data = await response.json();
+    for (const boardLevel of [1, 2, 3]) {
+      const entries = data.scores?.[boardLevel];
+      if (!Array.isArray(entries)) throw new Error('Leaderboard response was invalid');
+      leaderboards[boardLevel] = entries.slice(0, 5).filter(entry =>
+        typeof entry.name === 'string' && Number.isInteger(entry.score) && entry.score >= 0);
+    }
+    leaderboardStatus = 'ready';
+    return true;
+  } catch (error) {
+    console.error('Unable to load leaderboards:', error);
+    leaderboardStatus = 'error';
+    return false;
+  }
+}
+
+function qualifiesForLeaderboard(boardLevel, newScore) {
+  const entries = leaderboards[boardLevel];
+  return newScore > 0 && (entries.length < 5 || newScore > entries[entries.length - 1].score);
+}
+
+const scoreDialog = document.getElementById('score-dialog');
+const scoreForm = document.getElementById('score-form');
+const playerNameInput = document.getElementById('player-name');
+const submitScoreButton = document.getElementById('submit-score');
+const submissionStatus = document.getElementById('submission-status');
+const turnstileScript = document.querySelector('script[src*="challenges.cloudflare.com/turnstile"]');
+
+function renderTurnstileWidget() {
+  if (scoreDialog.hidden) return;
+  if (!window.turnstile) {
+    submissionStatus.textContent = 'Verification could not load. Check your connection and try again.';
+    return;
+  }
+  if (turnstileWidgetId !== null) {
+    window.turnstile.reset(turnstileWidgetId);
+    return;
+  }
+  turnstileWidgetId = window.turnstile.render('#turnstile-widget', {
+    sitekey: TURNSTILE_SITE_KEY,
+    action: 'score_submit',
+    callback(token) {
+      turnstileToken = token;
+      submitScoreButton.disabled = false;
+      submissionStatus.textContent = '';
+    },
+    'expired-callback'() {
+      turnstileToken = '';
+      submitScoreButton.disabled = true;
+      submissionStatus.textContent = 'Verification expired. Please complete it again.';
+    },
+    'error-callback'() {
+      turnstileToken = '';
+      submitScoreButton.disabled = true;
+      submissionStatus.textContent = 'Verification failed to load. Please try again.';
+    },
+  });
+}
+
+function closeScoreDialog() {
+  scoreDialog.hidden = true;
+  pendingSubmission = null;
+  turnstileToken = '';
+  submitScoreButton.disabled = true;
+  if (turnstileWidgetId !== null && window.turnstile) window.turnstile.reset(turnstileWidgetId);
+}
+
+function openScoreDialog(boardLevel, newScore) {
+  pendingSubmission = { level: boardLevel, score: newScore };
+  scoreDialog.hidden = false;
+  playerNameInput.value = '';
+  submissionStatus.textContent = 'Complete the human check to submit.';
+  submitScoreButton.disabled = true;
+  document.getElementById('qualifying-score').textContent =
+    'Level ' + boardLevel + ' - ' + newScore + ' points';
+  renderTurnstileWidget();
+  playerNameInput.focus();
+}
+
+turnstileScript.addEventListener('load', renderTurnstileWidget);
+document.getElementById('skip-score').addEventListener('click', closeScoreDialog);
+scoreForm.addEventListener('submit', async event => {
+  event.preventDefault();
+  if (!pendingSubmission || !turnstileToken || !scoreForm.reportValidity()) return;
+
+  submitScoreButton.disabled = true;
+  submissionStatus.textContent = 'Submitting score...';
+  try {
+    const response = await fetch(LEADERBOARD_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...pendingSubmission,
+        name: playerNameInput.value.trim(),
+        turnstileToken,
+      }),
+    });
+    const data = await response.json();
+    if (data.scores) {
+      leaderboards = data.scores;
+      leaderboardStatus = 'ready';
+    }
+    if (response.status === 201 && data.submitted) {
+      closeScoreDialog();
+      return;
+    }
+    submissionStatus.textContent = data.error || data.message || 'Score could not be submitted.';
+  } catch (error) {
+    console.error('Unable to submit score:', error);
+    submissionStatus.textContent = 'Could not reach the leaderboard. Check your connection and try again.';
+  }
+  turnstileToken = '';
+  if (turnstileWidgetId !== null && window.turnstile) window.turnstile.reset(turnstileWidgetId);
+});
 
 // ---------- 2) TABLE LAYOUT ----------
 // Walls are line segments: [x1, y1, x2, y2]
@@ -79,9 +229,9 @@ const levelThreeBumpers = [
 ];
 const bumperLayouts = [bumpers, levelTwoBumpers, levelThreeBumpers];
 const MENU_BUTTONS = [
-  { level: 1, x: 90, y: 365, w: 300, h: 64 },
-  { level: 2, x: 90, y: 445, w: 300, h: 64 },
-  { level: 3, x: 90, y: 525, w: 300, h: 64 },
+  { level: 1, x: 32, y: 302, w: 132, h: 58 },
+  { level: 2, x: 174, y: 302, w: 132, h: 58 },
+  { level: 3, x: 316, y: 302, w: 132, h: 58 },
 ];
 
 function currentBumpers() {
@@ -253,6 +403,7 @@ function resetBall() {
 }
 
 function newGame(selectedLevel = level) {
+  closeScoreDialog();
   level = selectedLevel;
   score = 0; balls = 3; bonus = false; hit.clear();
   resetBall();
@@ -272,6 +423,14 @@ function ballLost() {
       best = score;
       try { localStorage.setItem('pocketPinballBest', best); } catch (e) {}
     }
+    const finishedLevel = level;
+    const finishedScore = score;
+    refreshLeaderboards().then(available => {
+      if (available && state === 'over' && level === finishedLevel
+        && score === finishedScore && qualifiesForLeaderboard(finishedLevel, finishedScore)) {
+        openScoreDialog(finishedLevel, finishedScore);
+      }
+    });
   } else {
     resetBall();
   }
@@ -333,24 +492,24 @@ function draw() {
 
 function drawLevelSelector() {
   ctx.fillStyle = 'rgba(11,16,22,0.92)';
-  ctx.fillRect(40, 220, 400, 420);
+  ctx.fillRect(18, 180, 444, 480);
   ctx.textAlign = 'center';
   ctx.fillStyle = '#fff';
   if (state === 'over') {
     ctx.font = 'bold 34px system-ui, sans-serif';
-    ctx.fillText('Game over', 240, 275);
+    ctx.fillText('Game over', 240, 222);
     ctx.fillStyle = '#ffd166';
     ctx.font = '20px system-ui, sans-serif';
-    ctx.fillText('Score ' + score + '   Best ' + best, 240, 315);
+    ctx.fillText('Score ' + score + '   Best ' + best, 240, 258);
     ctx.fillStyle = '#9fb3c8';
     ctx.font = '16px system-ui, sans-serif';
-    ctx.fillText('Choose a level to play again', 240, 350);
+    ctx.fillText('Choose a level to play again', 240, 286);
   } else {
     ctx.font = 'bold 34px system-ui, sans-serif';
-    ctx.fillText('Pocket Pinball', 240, 285);
+    ctx.fillText('Pocket Pinball', 240, 225);
     ctx.fillStyle = '#9fb3c8';
     ctx.font = '16px system-ui, sans-serif';
-    ctx.fillText('Choose a level', 240, 330);
+    ctx.fillText('Choose a level', 240, 270);
   }
   MENU_BUTTONS.forEach(button => {
     const bumperCount = bumperLayouts[button.level - 1].length;
@@ -361,18 +520,54 @@ function drawLevelSelector() {
     ctx.strokeRect(button.x, button.y, button.w, button.h);
     ctx.fillStyle = '#ffd166';
     ctx.font = 'bold 20px system-ui, sans-serif';
-    ctx.fillText('Level ' + button.level, 240, button.y + 27);
+    ctx.fillText('Level ' + button.level, button.x + button.w / 2, button.y + 27);
     ctx.fillStyle = '#e8eef5';
-    ctx.font = '14px system-ui, sans-serif';
-    ctx.fillText(bumperCount + ' bumpers', 240, button.y + 49);
+    ctx.font = '12px system-ui, sans-serif';
+    ctx.fillText(bumperCount + ' bumpers', button.x + button.w / 2, button.y + 47);
   });
+
+  ctx.fillStyle = '#ffd166';
+  ctx.font = 'bold 17px system-ui, sans-serif';
+  ctx.fillText('TOP 5 SCORES', 240, 390);
+  ctx.font = 'bold 13px system-ui, sans-serif';
   ctx.fillStyle = '#9fb3c8';
+  const columns = [32, 176, 320];
+  for (const boardLevel of [1, 2, 3]) {
+    const x = columns[boardLevel - 1];
+    ctx.textAlign = 'center';
+    ctx.fillText('LEVEL ' + boardLevel, x + 64, 420);
+    const entries = leaderboards[boardLevel];
+    ctx.textAlign = 'left';
+    ctx.font = '12px system-ui, sans-serif';
+    if (leaderboardStatus !== 'ready') {
+      ctx.fillStyle = '#9fb3c8';
+      ctx.fillText(leaderboardStatus === 'loading' ? 'Loading...' : 'Unavailable', x + 8, 450);
+      continue;
+    }
+    if (entries.length === 0) {
+      ctx.fillStyle = '#9fb3c8';
+      ctx.fillText('No scores yet', x + 8, 450);
+      continue;
+    }
+    entries.forEach((entry, index) => {
+      ctx.fillStyle = '#e8eef5';
+      ctx.textAlign = 'left';
+      ctx.fillText((index + 1) + '. ' + entry.name.slice(0, 10), x + 5, 450 + index * 30);
+      ctx.textAlign = 'right';
+      ctx.fillStyle = '#ffd166';
+      ctx.fillText(String(entry.score), x + 126, 450 + index * 30);
+    });
+  }
+
+  ctx.fillStyle = '#9fb3c8';
+  ctx.textAlign = 'center';
   ctx.font = '14px system-ui, sans-serif';
-  ctx.fillText('Tap a level or press 1 / 2 / 3', 240, 615);
+  ctx.fillText('Tap a level or press 1 / 2 / 3', 240, 630);
 }
 
 // ---------- 7) MAIN LOOP ----------
 let last = performance.now();
+refreshLeaderboards();
 function frame(now) {
   const dt = Math.min((now - last) / 1000, 1 / 30); // cap so a tab switch doesn't cause a huge jump
   last = now;

@@ -27,13 +27,13 @@ Score and rules
 • Each bumper hit: 100 points.
 • Hitting every bumper on the current level lights a bonus: the next hit is worth 500 points.
 • The player has 3 balls. When the third is lost, the game ends.
-• The best score is saved in the browser and shown on the game over screen.
+• The best personal score is saved in the browser. The top five scores are shared for each level and require human verification to submit.
 Look and sound
 Flat, bright shapes on a dark table: no sprites needed for version one. Use 4 free sound effects (flipper, bumper, launch, drain) from jsfxr. A small screen shake on bumper hits adds punch.
 Tech
 A canvas game with a game loop, served as a static site on GitHub Pages. Support mobile Safari on iPhone and Chrome on Android using the responsive canvas and touch controls. Use circle and line collisions with simple gravity, and cap the ball's speed to keep it from tunneling through walls.
 Not now
-These wait until version one is playable: multiball, ramps, tilt, a second table, music, online leaderboards, and a polished art style.
+These wait until version one is playable: multiball, ramps, tilt, a second table, music, and a polished art style.
 Build order
 1.  Canvas, game loop, and a ball that falls with gravity (about 2 hours).
 2.  Walls and bounce physics (about 3 hours).
