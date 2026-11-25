@@ -50,8 +50,14 @@ const walls = [
   [430, 770, 460, 770],  // lane floor
   [20, 650, 130, 722],   // left slope down to the flipper
   [430, 650, 330, 722],  // right slope down to the flipper
-  [20, 480, 100, 540],   // left angled guide
-  [430, 480, 360, 540],  // right angled guide
+];
+const levelOneGuides = [
+  [20, 480, 100, 540],
+  [430, 480, 360, 540],
+];
+const raisedGuides = [
+  [20, 430, 100, 490],
+  [430, 430, 360, 490],
 ];
 
 const bumpers = [
@@ -61,16 +67,15 @@ const bumpers = [
 ];
 const levelTwoBumpers = [
   ...bumpers,
-  { x: 240, y: 440, r: 28 },
-  { x: 170, y: 520, r: 28 },
-  { x: 310, y: 520, r: 28 },
+  { x: 150, y: 565, r: 28 },
+  { x: 330, y: 565, r: 28 },
 ];
 const levelThreeBumpers = [
   { x: 160, y: 230, r: 28 },
   { x: 240, y: 185, r: 28 },
   { x: 320, y: 230, r: 28 },
-  { x: 155, y: 570, r: 28 },
-  { x: 325, y: 570, r: 28 },
+  { x: 150, y: 565, r: 28 },
+  { x: 330, y: 565, r: 28 },
 ];
 const bumperLayouts = [bumpers, levelTwoBumpers, levelThreeBumpers];
 const MENU_BUTTONS = [
@@ -89,12 +94,16 @@ const REST = 0.5, UP = -0.5, FLIP_SPEED = 20, FLIP_LEN = 80;
 const flippers = [
   { px: 130, py: 722, sg: 1,  side: 'L', a: REST, omega: 0 },
   { px: 330, py: 722, sg: -1, side: 'R', a: REST, omega: 0 },
-  { px: 110, py: 480, sg: 1,  side: 'L', a: REST, omega: 0 },
-  { px: 370, py: 480, sg: -1, side: 'R', a: REST, omega: 0 },
+  { px: 20, py: 430, sg: 1,  side: 'L', a: REST, omega: 0 },
+  { px: 430, py: 430, sg: -1, side: 'R', a: REST, omega: 0 },
 ];
 
 function currentFlippers() {
   return level === 3 ? flippers : flippers.slice(0, 2);
+}
+
+function currentWalls() {
+  return [...walls, ...(level === 1 ? levelOneGuides : level === 2 ? raisedGuides : [])];
 }
 
 // ---------- 3) INPUT ----------
@@ -228,7 +237,7 @@ function physicsStep(dt) {
     }
   }
 
-  for (const w of walls) collideSegment(w[0], w[1], w[2], w[3], 2, 0.5);
+  for (const w of currentWalls()) collideSegment(w[0], w[1], w[2], w[3], 2, 0.5);
   for (const f of currentFlippers()) {
     const [tx, ty] = flipperTip(f);
     collideSegment(f.px, f.py, tx, ty, 7, 0.4, (cx, cy) => {
@@ -290,7 +299,7 @@ function draw() {
   ctx.strokeStyle = '#6fa8ff';
   ctx.lineWidth = 4;
   ctx.lineCap = 'round';
-  for (const w of walls) { ctx.beginPath(); ctx.moveTo(w[0], w[1]); ctx.lineTo(w[2], w[3]); ctx.stroke(); }
+  for (const w of currentWalls()) { ctx.beginPath(); ctx.moveTo(w[0], w[1]); ctx.lineTo(w[2], w[3]); ctx.stroke(); }
 
   // bumpers (filled once hit toward a bonus)
   currentBumpers().forEach((b, i) => {

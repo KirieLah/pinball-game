@@ -8,8 +8,8 @@ The screen
 A portrait table, about 480 × 800 pixels, scaled to fit the window. A title menu lets the player choose one of three levels.
 • Top: score and balls remaining.
 • Level 1: three round bumpers in a triangle, plus two angled walls that guide the ball.
-• Level 2: six bumpers, with a second group below the first to fill more of the table.
-• Level 3: three bumpers in an arc, two more below the upper flippers, and four flippers (two on each side).
+• Level 2: five bumpers, with two more below the first group and the raised side guides.
+• Level 3: three bumpers in an arc, two more below side-mounted flippers, and four flippers (two on each side). The upper flippers replace the angled side guides.
 • Bottom: two flippers with a gap between them (the drain). A ball falling through the gap is lost.
 • Right edge: a plunger lane where the ball starts.
 Controls
