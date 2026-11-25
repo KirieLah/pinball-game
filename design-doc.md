@@ -6,7 +6,9 @@ The one mechanic
 Flipping. The player taps left or right to swing the flippers and launch the ball back up the table. Everything else in the game exists to give that action something to hit.
 The screen
 A portrait table, about 480 × 800 pixels, scaled to fit the window. A title menu lets the player choose one of three levels.
-• Top: score and balls remaining.
+• Top center: balls remaining and current level, positioned below the top rail.
+• Outside the canvas: the level selector and all three top-five leaderboards on the title/game-over screens; during play, current score, personal best, and the active level's top-five leaderboard.
+• Responsive layout: the panel sits beside the table on desktop and below it on portrait mobile, scrolling independently when needed.
 • Level 1: three round bumpers in a triangle, plus two angled walls that guide the ball.
 • Level 2: five bumpers, with two more below the first group and the raised side guides.
 • Level 3: three bumpers in an arc, two more below side-mounted flippers, and four flippers (two on each side). The upper flippers replace the angled side guides.

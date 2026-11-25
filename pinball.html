@@ -6,8 +6,24 @@
 <title>Pocket Pinball</title>
 <style>
   html, body { margin: 0; min-height: 100%; background: #0b1016; overflow: hidden; }
-  body { display: flex; justify-content: center; align-items: center; }
-  canvas { display: block; width: auto; height: 100vh; height: 100dvh; max-width: 100vw; max-height: 100vh; max-height: 100dvh; aspect-ratio: 480 / 800; touch-action: none; }
+  body { min-height: 100vh; min-height: 100dvh; }
+  .game-shell { box-sizing: border-box; width: 100vw; height: 100vh; height: 100dvh; display: flex; justify-content: center; align-items: center; gap: 12px; padding: 8px; }
+  canvas { display: block; flex: 0 1 auto; width: auto; height: min(800px, calc(100dvh - 16px)); max-width: calc(100vw - 300px); max-height: calc(100vh - 16px); max-height: calc(100dvh - 16px); aspect-ratio: 480 / 800; touch-action: none; }
+  #game-panel { box-sizing: border-box; flex: 0 1 260px; width: 260px; max-height: calc(100dvh - 16px); overflow: auto; padding: 16px; border: 1px solid #31465f; border-radius: 10px; background: #111923; color: #e8eef5; font: 14px system-ui, sans-serif; }
+  #game-panel h1 { margin: 0 0 8px; color: #ffd166; font-size: 24px; }
+  #game-panel h2 { margin: 16px 0 8px; color: #9fb3c8; font-size: 14px; }
+  #game-panel p { margin: 6px 0; color: #9fb3c8; }
+  .panel-levels { display: grid; gap: 8px; margin: 14px 0; }
+  .panel-level-button { width: 100%; padding: 10px 12px; border: 1px solid #6fa8ff; border-radius: 6px; background: #172433; color: #ffd166; font: inherit; font-weight: 700; text-align: left; }
+  .panel-level-button:hover, .panel-level-button:focus-visible { background: #24384d; outline: 2px solid #ffd166; outline-offset: 2px; }
+  .panel-level-button span { display: block; margin-top: 2px; color: #e8eef5; font-size: 12px; font-weight: 400; }
+  .panel-score { margin: 12px 0; padding: 10px; border: 1px solid #46617f; border-radius: 6px; }
+  .panel-score strong { color: #ffd166; }
+  .panel-board { margin: 12px 0; }
+  .panel-board h2 { margin-top: 10px; color: #ffd166; }
+  .panel-board ol { margin: 0; padding-left: 26px; }
+  .panel-board li { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; color: #e8eef5; }
+  .panel-board li span:last-child { color: #ffd166; font-variant-numeric: tabular-nums; }
   .dialog-backdrop { position: fixed; inset: 0; z-index: 2; display: grid; place-items: center; overflow: auto; padding: 16px; background: rgba(3, 7, 12, 0.82); font: 16px system-ui, sans-serif; color: #e8eef5; }
   .dialog-backdrop[hidden] { display: none; }
   .score-dialog { box-sizing: border-box; width: min(100%, 360px); max-height: 100%; overflow: auto; padding: 24px; border: 2px solid #6fa8ff; border-radius: 12px; background: #111b26; }
@@ -18,10 +34,23 @@
   .score-dialog button { margin: 12px 8px 0 0; padding: 10px 14px; border: 0; border-radius: 6px; background: #ffd166; color: #111; font: inherit; font-weight: 700; }
   .score-dialog button:disabled { opacity: 0.5; }
   #submission-status { min-height: 1.4em; color: #9fb3c8; }
+  @media (max-width: 600px) and (orientation: portrait) {
+    .game-shell { flex-direction: column; gap: 8px; }
+    canvas { flex: 0 1 auto; height: min(63dvh, calc((100vw - 16px) * 5 / 3)); max-width: calc(100vw - 16px); max-height: 63dvh; }
+    #game-panel { flex: 1 1 auto; width: min(480px, calc(100vw - 16px)); max-height: 34dvh; min-height: 0; padding: 10px 14px; }
+    #game-panel h1 { font-size: 20px; }
+    #game-panel h2 { margin: 10px 0 5px; }
+    .panel-levels { gap: 6px; margin: 8px 0; }
+    .panel-level-button { padding: 7px 10px; }
+    .panel-board { margin: 8px 0; }
+  }
 </style>
 </head>
 <body>
+<main class="game-shell">
 <canvas id="c" width="480" height="800"></canvas>
+<aside id="game-panel"></aside>
+</main>
 <div id="score-dialog" class="dialog-backdrop" hidden>
   <form id="score-form" class="score-dialog">
     <h1>New high score!</h1>
@@ -65,6 +94,7 @@ let leaderboardStatus = 'loading';
 let pendingSubmission = null;
 let turnstileWidgetId = null;
 let turnstileToken = '';
+const gamePanel = document.getElementById('game-panel');
 
 try { best = +localStorage.getItem('pocketPinballBest') || 0; } catch (e) {}
 
@@ -81,13 +111,75 @@ async function refreshLeaderboards() {
         typeof entry.name === 'string' && Number.isInteger(entry.score) && entry.score >= 0);
     }
     leaderboardStatus = 'ready';
+    renderGamePanel();
     return true;
   } catch (error) {
     console.error('Unable to load leaderboards:', error);
     leaderboardStatus = 'error';
+    renderGamePanel();
     return false;
   }
 }
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, character => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  })[character]);
+}
+
+function renderLeaderboard(boardLevel) {
+  const entries = leaderboards[boardLevel];
+  let rows;
+  if (leaderboardStatus !== 'ready') {
+    rows = '<li>' + (leaderboardStatus === 'loading' ? 'Loading scores...' : 'Leaderboard unavailable') + '</li>';
+  } else if (entries.length === 0) {
+    rows = '<li>No scores yet</li>';
+  } else {
+    rows = entries.map(entry =>
+      '<li><span>' + escapeHtml(entry.name) + '</span><span>' + entry.score.toLocaleString() + '</span></li>',
+    ).join('');
+  }
+  return '<section class="panel-board"><h2>Level ' + boardLevel + ' top 5</h2><ol>' + rows + '</ol></section>';
+}
+
+function renderGamePanel() {
+  const selectingLevel = state === 'title' || state === 'over';
+  let content = '';
+  if (state === 'title') {
+    content += '<h1>Pocket Pinball</h1><p>Choose a level to play.</p>';
+  } else if (state === 'over') {
+    content += '<h1>Game over</h1><div class="panel-score">Score <strong>' +
+      score.toLocaleString() + '</strong><br>Personal best <strong>' +
+      best.toLocaleString() + '</strong></div><p>Choose a level to play again.</p>';
+  } else {
+    content += '<h1>Level ' + level + '</h1><div class="panel-score">Current score <strong>' +
+      score.toLocaleString() + '</strong><br>Personal best <strong>' +
+      best.toLocaleString() + '</strong></div>';
+    if (state === 'ready') content += '<p>Press Space or tap the table to launch.</p>';
+  }
+
+  if (selectingLevel) {
+    content += '<div class="panel-levels" aria-label="Choose a level">' +
+      MENU_BUTTONS.map(button =>
+        '<button class="panel-level-button" type="button" data-level="' + button.level + '">' +
+        'Play level ' + button.level + '<span>' +
+        bumperLayouts[button.level - 1].length + ' bumpers</span></button>',
+      ).join('') + '</div>';
+    for (const boardLevel of [1, 2, 3]) content += renderLeaderboard(boardLevel);
+  } else {
+    content += renderLeaderboard(level);
+  }
+  gamePanel.innerHTML = content;
+}
+
+gamePanel.addEventListener('click', event => {
+  const button = event.target.closest('button[data-level]');
+  if (button && gamePanel.contains(button)) newGame(Number(button.dataset.level));
+});
 
 function qualifiesForLeaderboard(boardLevel, newScore) {
   const entries = leaderboards[boardLevel];
@@ -228,11 +320,7 @@ const levelThreeBumpers = [
   { x: 330, y: 565, r: 28 },
 ];
 const bumperLayouts = [bumpers, levelTwoBumpers, levelThreeBumpers];
-const MENU_BUTTONS = [
-  { level: 1, x: 32, y: 302, w: 132, h: 58 },
-  { level: 2, x: 174, y: 302, w: 132, h: 58 },
-  { level: 3, x: 316, y: 302, w: 132, h: 58 },
-];
+const MENU_BUTTONS = [{ level: 1 }, { level: 2 }, { level: 3 }];
 
 function currentBumpers() {
   return bumperLayouts[level - 1];
@@ -276,14 +364,9 @@ window.addEventListener('keydown', e => {
 window.addEventListener('keyup', e => keys.delete(e.code));
 
 canvas.addEventListener('pointerdown', e => {
+  if (state === 'title' || state === 'over') return;
   const rect = canvas.getBoundingClientRect();
   const x = (e.clientX - rect.left) * W / rect.width;
-  const y = (e.clientY - rect.top) * H / rect.height;
-  if (state === 'title' || state === 'over') {
-    const button = MENU_BUTTONS.find(b => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h);
-    if (button) newGame(button.level);
-    return;
-  }
   touches.set(e.pointerId, x < W / 2 ? 'L' : 'R');
   action();
 });
@@ -360,10 +443,15 @@ function collideBumpers() {
 }
 
 function scoreBumper(i) {
-  if (bonus) { score += 500; bonus = false; return; }
-  score += 100;
-  hit.add(i);
-  if (hit.size === currentBumpers().length) { bonus = true; hit.clear(); }
+  if (bonus) {
+    score += 500;
+    bonus = false;
+  } else {
+    score += 100;
+    hit.add(i);
+    if (hit.size === currentBumpers().length) { bonus = true; hit.clear(); }
+  }
+  renderGamePanel();
 }
 
 function physicsStep(dt) {
@@ -400,6 +488,7 @@ function physicsStep(dt) {
 function resetBall() {
   ball.x = 445; ball.y = 750; ball.vx = 0; ball.vy = 0;
   state = 'ready';
+  renderGamePanel();
 }
 
 function newGame(selectedLevel = level) {
@@ -423,6 +512,7 @@ function ballLost() {
       best = score;
       try { localStorage.setItem('pocketPinballBest', best); } catch (e) {}
     }
+    renderGamePanel();
     const finishedLevel = level;
     const finishedScore = score;
     refreshLeaderboards().then(available => {
@@ -478,95 +568,18 @@ function draw() {
   ctx.fillStyle = '#fff'; ctx.fill();
 
   // HUD
-  ctx.fillStyle = '#e8eef5'; ctx.font = 'bold 22px system-ui, sans-serif';
-  ctx.textAlign = 'left';  ctx.fillText('Score ' + score, 36, 46);
-  ctx.textAlign = 'right'; ctx.fillText('Balls ' + balls, 420, 46);
+  ctx.fillStyle = '#e8eef5';
+  ctx.font = 'bold 18px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('BALLS ' + balls, 240, 48);
   ctx.textAlign = 'center'; ctx.fillStyle = '#9fb3c8'; ctx.font = 'bold 16px system-ui, sans-serif';
   ctx.fillText('LEVEL ' + level, 240, 78);
-  if (bonus) { ctx.textAlign = 'center'; ctx.fillStyle = '#ffd166'; ctx.fillText('BONUS: next hit is 500', 240, 110); }
 
-  // messages
-  if (state === 'title' || state === 'over') drawLevelSelector();
-  if (state === 'ready') { ctx.textAlign = 'center'; ctx.fillStyle = '#9fb3c8'; ctx.font = '16px system-ui, sans-serif'; ctx.fillText('Space or tap to launch', 240, 640); }
-}
-
-function drawLevelSelector() {
-  ctx.fillStyle = 'rgba(11,16,22,0.92)';
-  ctx.fillRect(18, 180, 444, 480);
-  ctx.textAlign = 'center';
-  ctx.fillStyle = '#fff';
-  if (state === 'over') {
-    ctx.font = 'bold 34px system-ui, sans-serif';
-    ctx.fillText('Game over', 240, 222);
-    ctx.fillStyle = '#ffd166';
-    ctx.font = '20px system-ui, sans-serif';
-    ctx.fillText('Score ' + score + '   Best ' + best, 240, 258);
-    ctx.fillStyle = '#9fb3c8';
-    ctx.font = '16px system-ui, sans-serif';
-    ctx.fillText('Choose a level to play again', 240, 286);
-  } else {
-    ctx.font = 'bold 34px system-ui, sans-serif';
-    ctx.fillText('Pocket Pinball', 240, 225);
-    ctx.fillStyle = '#9fb3c8';
-    ctx.font = '16px system-ui, sans-serif';
-    ctx.fillText('Choose a level', 240, 270);
-  }
-  MENU_BUTTONS.forEach(button => {
-    const bumperCount = bumperLayouts[button.level - 1].length;
-    ctx.fillStyle = '#172433';
-    ctx.fillRect(button.x, button.y, button.w, button.h);
-    ctx.strokeStyle = '#6fa8ff';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(button.x, button.y, button.w, button.h);
-    ctx.fillStyle = '#ffd166';
-    ctx.font = 'bold 20px system-ui, sans-serif';
-    ctx.fillText('Level ' + button.level, button.x + button.w / 2, button.y + 27);
-    ctx.fillStyle = '#e8eef5';
-    ctx.font = '12px system-ui, sans-serif';
-    ctx.fillText(bumperCount + ' bumpers', button.x + button.w / 2, button.y + 47);
-  });
-
-  ctx.fillStyle = '#ffd166';
-  ctx.font = 'bold 17px system-ui, sans-serif';
-  ctx.fillText('TOP 5 SCORES', 240, 390);
-  ctx.font = 'bold 13px system-ui, sans-serif';
-  ctx.fillStyle = '#9fb3c8';
-  const columns = [32, 176, 320];
-  for (const boardLevel of [1, 2, 3]) {
-    const x = columns[boardLevel - 1];
-    ctx.textAlign = 'center';
-    ctx.fillText('LEVEL ' + boardLevel, x + 64, 420);
-    const entries = leaderboards[boardLevel];
-    ctx.textAlign = 'left';
-    ctx.font = '12px system-ui, sans-serif';
-    if (leaderboardStatus !== 'ready') {
-      ctx.fillStyle = '#9fb3c8';
-      ctx.fillText(leaderboardStatus === 'loading' ? 'Loading...' : 'Unavailable', x + 8, 450);
-      continue;
-    }
-    if (entries.length === 0) {
-      ctx.fillStyle = '#9fb3c8';
-      ctx.fillText('No scores yet', x + 8, 450);
-      continue;
-    }
-    entries.forEach((entry, index) => {
-      ctx.fillStyle = '#e8eef5';
-      ctx.textAlign = 'left';
-      ctx.fillText((index + 1) + '. ' + entry.name.slice(0, 10), x + 5, 450 + index * 30);
-      ctx.textAlign = 'right';
-      ctx.fillStyle = '#ffd166';
-      ctx.fillText(String(entry.score), x + 126, 450 + index * 30);
-    });
-  }
-
-  ctx.fillStyle = '#9fb3c8';
-  ctx.textAlign = 'center';
-  ctx.font = '14px system-ui, sans-serif';
-  ctx.fillText('Tap a level or press 1 / 2 / 3', 240, 630);
 }
 
 // ---------- 7) MAIN LOOP ----------
 let last = performance.now();
+renderGamePanel();
 refreshLeaderboards();
 function frame(now) {
   const dt = Math.min((now - last) / 1000, 1 / 30); // cap so a tab switch doesn't cause a huge jump
