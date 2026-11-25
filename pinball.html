@@ -117,7 +117,7 @@ window.addEventListener('keydown', e => {
   if (['ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
   if (e.repeat) return;
   keys.add(e.code);
-  if (state === 'title' && ['Digit1', 'Digit2', 'Digit3'].includes(e.code)) {
+  if ((state === 'title' || state === 'over') && ['Digit1', 'Digit2', 'Digit3'].includes(e.code)) {
     newGame(Number(e.code.slice(-1)));
     return;
   }
@@ -129,12 +129,11 @@ canvas.addEventListener('pointerdown', e => {
   const rect = canvas.getBoundingClientRect();
   const x = (e.clientX - rect.left) * W / rect.width;
   const y = (e.clientY - rect.top) * H / rect.height;
-  if (state === 'title') {
+  if (state === 'title' || state === 'over') {
     const button = MENU_BUTTONS.find(b => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h);
     if (button) newGame(button.level);
     return;
   }
-  if (state === 'over') { action(); return; }
   touches.set(e.pointerId, x < W / 2 ? 'L' : 'R');
   action();
 });
@@ -142,10 +141,9 @@ const endTouch = e => touches.delete(e.pointerId);
 canvas.addEventListener('pointerup', endTouch);
 canvas.addEventListener('pointercancel', endTouch);
 
-// Space / tap launches the ball, or restarts after game over
+// Space / tap launches the ball
 function action() {
-  if (state === 'over') newGame(level);
-  else if (state === 'ready') launch();
+  if (state === 'ready') launch();
 }
 
 // ---------- 4) PHYSICS ----------
@@ -329,21 +327,31 @@ function draw() {
   if (bonus) { ctx.textAlign = 'center'; ctx.fillStyle = '#ffd166'; ctx.fillText('BONUS: next hit is 500', 240, 110); }
 
   // messages
-  if (state === 'title') drawTitleMenu();
-  if (state === 'over')  overlay('Game over', 'Score ' + score + '   Best ' + best, 'Tap or press Space to replay Level ' + level);
+  if (state === 'title' || state === 'over') drawLevelSelector();
   if (state === 'ready') { ctx.textAlign = 'center'; ctx.fillStyle = '#9fb3c8'; ctx.font = '16px system-ui, sans-serif'; ctx.fillText('Space or tap to launch', 240, 640); }
 }
 
-function drawTitleMenu() {
+function drawLevelSelector() {
   ctx.fillStyle = 'rgba(11,16,22,0.92)';
   ctx.fillRect(40, 220, 400, 420);
   ctx.textAlign = 'center';
   ctx.fillStyle = '#fff';
-  ctx.font = 'bold 34px system-ui, sans-serif';
-  ctx.fillText('Pocket Pinball', 240, 285);
-  ctx.fillStyle = '#9fb3c8';
-  ctx.font = '16px system-ui, sans-serif';
-  ctx.fillText('Choose a level', 240, 330);
+  if (state === 'over') {
+    ctx.font = 'bold 34px system-ui, sans-serif';
+    ctx.fillText('Game over', 240, 275);
+    ctx.fillStyle = '#ffd166';
+    ctx.font = '20px system-ui, sans-serif';
+    ctx.fillText('Score ' + score + '   Best ' + best, 240, 315);
+    ctx.fillStyle = '#9fb3c8';
+    ctx.font = '16px system-ui, sans-serif';
+    ctx.fillText('Choose a level to play again', 240, 350);
+  } else {
+    ctx.font = 'bold 34px system-ui, sans-serif';
+    ctx.fillText('Pocket Pinball', 240, 285);
+    ctx.fillStyle = '#9fb3c8';
+    ctx.font = '16px system-ui, sans-serif';
+    ctx.fillText('Choose a level', 240, 330);
+  }
   MENU_BUTTONS.forEach(button => {
     const bumperCount = bumperLayouts[button.level - 1].length;
     ctx.fillStyle = '#172433';
@@ -361,14 +369,6 @@ function drawTitleMenu() {
   ctx.fillStyle = '#9fb3c8';
   ctx.font = '14px system-ui, sans-serif';
   ctx.fillText('Tap a level or press 1 / 2 / 3', 240, 615);
-}
-
-function overlay(title, line1, line2) {
-  ctx.fillStyle = 'rgba(11,16,22,0.82)'; ctx.fillRect(40, 270, 400, 200);
-  ctx.textAlign = 'center';
-  ctx.fillStyle = '#fff';    ctx.font = 'bold 34px system-ui, sans-serif'; ctx.fillText(title, 240, 330);
-  ctx.fillStyle = '#ffd166'; ctx.font = '20px system-ui, sans-serif';      ctx.fillText(line1, 240, 380);
-  ctx.fillStyle = '#9fb3c8'; ctx.font = '14px system-ui, sans-serif';      ctx.fillText(line2, 240, 425);
 }
 
 // ---------- 7) MAIN LOOP ----------

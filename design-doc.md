@@ -19,8 +19,8 @@ Left arrow or Z, or tap left half of screen
 Left flipper
 Right arrow or M, or tap right half of screen
 Right flipper
-1 / 2 / 3, or tap a level on the title screen
-Choose a level
+1 / 2 / 3, or tap a level on the title or game-over screen
+Choose a level / play again
 Space, or tap the table
 Launch the ball
 Score and rules
