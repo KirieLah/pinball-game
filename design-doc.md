@@ -7,7 +7,9 @@ Flipping. The player taps left or right to swing the flippers and launch the bal
 The screen
 A portrait table, about 480 × 800 pixels, scaled to fit the window. A title menu lets the player choose one of three levels.
 • Top center: balls remaining and current level, positioned below the top rail.
-• Outside the canvas: the level selector and all three top-five leaderboards on the title/game-over screens; during play, current score, personal best, and the active level's top-five leaderboard.
+• Outside the canvas: the title screen shows one button per level with its highest score; during play, the sidebar shows current score, personal best, and that level's top-five leaderboard.
+• The table is hidden on the title screen. While playing, taps anywhere outside interactive controls operate the flippers or launch the ball.
+• When the last ball is lost, return to the title screen. If the score qualifies for the top five, offer submission before returning; successful submission or skipping the offer returns to the title.
 • Responsive layout: the panel sits beside the table on desktop and below it on portrait mobile, scrolling independently when needed.
 • Level 1: three round bumpers in a triangle, plus two angled walls that guide the ball.
 • Level 2: five bumpers, with two more below the first group and the raised side guides.
