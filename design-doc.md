@@ -1,13 +1,15 @@
 Pocket Pinball: One-Page Design Doc
 A tiny browser pinball game, built with plain JavaScript on an HTML canvas.
 Pitch
-Keep the ball alive and rack up points. One table, one ball at a time, two flippers. Easy to learn in ten seconds, hard to put down.
+Keep the ball alive and rack up points. One table, one ball at a time, and three levels to choose from. Easy to learn in ten seconds, hard to put down.
 The one mechanic
-Flipping. The player taps left or right to swing a flipper and launch the ball back up the table. Everything else in the game exists to give that action something to hit.
-The one screen
-A single portrait table, about 480 × 800 pixels, scaled to fit the window.
+Flipping. The player taps left or right to swing the flippers and launch the ball back up the table. Everything else in the game exists to give that action something to hit.
+The screen
+A portrait table, about 480 × 800 pixels, scaled to fit the window. A title menu lets the player choose one of three levels.
 • Top: score and balls remaining.
-• Middle: three round bumpers in a triangle, plus two angled walls that guide the ball.
+• Level 1: three round bumpers in a triangle, plus two angled walls that guide the ball.
+• Level 2: six bumpers, with a second group below the first to fill more of the table.
+• Level 3: three bumpers in an arc, two more below the upper flippers, and four flippers (two on each side).
 • Bottom: two flippers with a gap between them (the drain). A ball falling through the gap is lost.
 • Right edge: a plunger lane where the ball starts.
 Controls
@@ -17,11 +19,13 @@ Left arrow or Z, or tap left half of screen
 Left flipper
 Right arrow or M, or tap right half of screen
 Right flipper
-Space, or tap anywhere on the title screen
-Launch the ball / start
+1 / 2 / 3, or tap a level on the title screen
+Choose a level
+Space, or tap the table
+Launch the ball
 Score and rules
 • Each bumper hit: 100 points.
-• Hitting all three bumpers lights a bonus: the next hit is worth 500 points.
+• Hitting every bumper on the current level lights a bonus: the next hit is worth 500 points.
 • The player has 3 balls. When the third is lost, the game ends.
 • The best score is saved in the browser and shown on the game over screen.
 Look and sound

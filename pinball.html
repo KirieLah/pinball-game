@@ -32,6 +32,7 @@ const PLUNGER_GATE_Y = 200;
 const ball = { x: 445, y: 750, vx: 0, vy: 0, r: 8 };
 
 let state = 'title';        // 'title' | 'ready' | 'play' | 'over'
+let level = 1;
 let score = 0, balls = 3, best = 0, bonus = false;
 const hit = new Set();      // which bumpers were hit since the last bonus
 
@@ -58,14 +59,43 @@ const bumpers = [
   { x: 170, y: 340, r: 28 },
   { x: 310, y: 340, r: 28 },
 ];
+const levelTwoBumpers = [
+  ...bumpers,
+  { x: 240, y: 440, r: 28 },
+  { x: 170, y: 520, r: 28 },
+  { x: 310, y: 520, r: 28 },
+];
+const levelThreeBumpers = [
+  { x: 160, y: 230, r: 28 },
+  { x: 240, y: 185, r: 28 },
+  { x: 320, y: 230, r: 28 },
+  { x: 155, y: 570, r: 28 },
+  { x: 325, y: 570, r: 28 },
+];
+const bumperLayouts = [bumpers, levelTwoBumpers, levelThreeBumpers];
+const MENU_BUTTONS = [
+  { level: 1, x: 90, y: 365, w: 300, h: 64 },
+  { level: 2, x: 90, y: 445, w: 300, h: 64 },
+  { level: 3, x: 90, y: 525, w: 300, h: 64 },
+];
+
+function currentBumpers() {
+  return bumperLayouts[level - 1];
+}
 
 // Flippers: sg = +1 for left (points right), -1 for right (points left).
 // angle 0.5 = resting (tip down), angle -0.5 = raised.
 const REST = 0.5, UP = -0.5, FLIP_SPEED = 20, FLIP_LEN = 80;
 const flippers = [
-  { px: 130, py: 722, sg: 1,  a: REST, omega: 0 },
-  { px: 330, py: 722, sg: -1, a: REST, omega: 0 },
+  { px: 130, py: 722, sg: 1,  side: 'L', a: REST, omega: 0 },
+  { px: 330, py: 722, sg: -1, side: 'R', a: REST, omega: 0 },
+  { px: 110, py: 480, sg: 1,  side: 'L', a: REST, omega: 0 },
+  { px: 370, py: 480, sg: -1, side: 'R', a: REST, omega: 0 },
 ];
+
+function currentFlippers() {
+  return level === 3 ? flippers : flippers.slice(0, 2);
+}
 
 // ---------- 3) INPUT ----------
 const keys = new Set();
@@ -78,22 +108,34 @@ window.addEventListener('keydown', e => {
   if (['ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
   if (e.repeat) return;
   keys.add(e.code);
+  if (state === 'title' && ['Digit1', 'Digit2', 'Digit3'].includes(e.code)) {
+    newGame(Number(e.code.slice(-1)));
+    return;
+  }
   if (e.code === 'Space') action();
 });
 window.addEventListener('keyup', e => keys.delete(e.code));
 
 canvas.addEventListener('pointerdown', e => {
   const rect = canvas.getBoundingClientRect();
-  touches.set(e.pointerId, (e.clientX - rect.left) < rect.width / 2 ? 'L' : 'R');
+  const x = (e.clientX - rect.left) * W / rect.width;
+  const y = (e.clientY - rect.top) * H / rect.height;
+  if (state === 'title') {
+    const button = MENU_BUTTONS.find(b => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h);
+    if (button) newGame(button.level);
+    return;
+  }
+  if (state === 'over') { action(); return; }
+  touches.set(e.pointerId, x < W / 2 ? 'L' : 'R');
   action();
 });
 const endTouch = e => touches.delete(e.pointerId);
 canvas.addEventListener('pointerup', endTouch);
 canvas.addEventListener('pointercancel', endTouch);
 
-// Space / tap: starts the game, launches the ball, or restarts after game over
+// Space / tap launches the ball, or restarts after game over
 function action() {
-  if (state === 'title' || state === 'over') newGame();
+  if (state === 'over') newGame(level);
   else if (state === 'ready') launch();
 }
 
@@ -132,9 +174,9 @@ function flipperTip(f) {
 }
 
 function updateFlippers(dt) {
-  const pressed = [leftDown(), rightDown()];
-  flippers.forEach((f, i) => {
-    const target = pressed[i] ? UP : REST;
+  currentFlippers().forEach(f => {
+    const pressed = f.side === 'L' ? leftDown() : rightDown();
+    const target = pressed ? UP : REST;
     const step = FLIP_SPEED * dt;
     if (Math.abs(target - f.a) <= step) { f.a = target; f.omega = 0; }
     else { const dir = Math.sign(target - f.a); f.a += dir * step; f.omega = dir * FLIP_SPEED; }
@@ -142,7 +184,7 @@ function updateFlippers(dt) {
 }
 
 function collideBumpers() {
-  bumpers.forEach((b, i) => {
+  currentBumpers().forEach((b, i) => {
     const dx = ball.x - b.x, dy = ball.y - b.y;
     const d = Math.hypot(dx, dy);
     const R = ball.r + b.r;
@@ -164,7 +206,7 @@ function scoreBumper(i) {
   if (bonus) { score += 500; bonus = false; return; }
   score += 100;
   hit.add(i);
-  if (hit.size === bumpers.length) { bonus = true; hit.clear(); }
+  if (hit.size === currentBumpers().length) { bonus = true; hit.clear(); }
 }
 
 function physicsStep(dt) {
@@ -187,7 +229,7 @@ function physicsStep(dt) {
   }
 
   for (const w of walls) collideSegment(w[0], w[1], w[2], w[3], 2, 0.5);
-  for (const f of flippers) {
+  for (const f of currentFlippers()) {
     const [tx, ty] = flipperTip(f);
     collideSegment(f.px, f.py, tx, ty, 7, 0.4, (cx, cy) => {
       const dx = cx - f.px, dy = cy - f.py;
@@ -203,7 +245,8 @@ function resetBall() {
   state = 'ready';
 }
 
-function newGame() {
+function newGame(selectedLevel = level) {
+  level = selectedLevel;
   score = 0; balls = 3; bonus = false; hit.clear();
   resetBall();
 }
@@ -250,7 +293,7 @@ function draw() {
   for (const w of walls) { ctx.beginPath(); ctx.moveTo(w[0], w[1]); ctx.lineTo(w[2], w[3]); ctx.stroke(); }
 
   // bumpers (filled once hit toward a bonus)
-  bumpers.forEach((b, i) => {
+  currentBumpers().forEach((b, i) => {
     ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
     ctx.fillStyle = bonus ? '#ffd166' : hit.has(i) ? '#ff8fab' : '#c9184a';
     ctx.fill();
@@ -259,7 +302,7 @@ function draw() {
 
   // flippers
   ctx.strokeStyle = '#ffd166'; ctx.lineWidth = 14;
-  for (const f of flippers) {
+  for (const f of currentFlippers()) {
     const [tx, ty] = flipperTip(f);
     ctx.beginPath(); ctx.moveTo(f.px, f.py); ctx.lineTo(tx, ty); ctx.stroke();
   }
@@ -272,12 +315,43 @@ function draw() {
   ctx.fillStyle = '#e8eef5'; ctx.font = 'bold 22px system-ui, sans-serif';
   ctx.textAlign = 'left';  ctx.fillText('Score ' + score, 36, 46);
   ctx.textAlign = 'right'; ctx.fillText('Balls ' + balls, 420, 46);
+  ctx.textAlign = 'center'; ctx.fillStyle = '#9fb3c8'; ctx.font = 'bold 16px system-ui, sans-serif';
+  ctx.fillText('LEVEL ' + level, 240, 78);
   if (bonus) { ctx.textAlign = 'center'; ctx.fillStyle = '#ffd166'; ctx.fillText('BONUS: next hit is 500', 240, 110); }
 
   // messages
-  if (state === 'title') overlay('Pocket Pinball', 'Press Space or tap to start', 'Left/Right: Z and M or arrow keys, or tap left/right side');
-  if (state === 'over')  overlay('Game over', 'Score ' + score + '   Best ' + best, 'Press Space or tap to play again');
-  if (state === 'ready') { ctx.textAlign = 'center'; ctx.fillStyle = '#9fb3c8'; ctx.font = '16px system-ui, sans-serif'; ctx.fillText('Space or tap to launch', 240, 600); }
+  if (state === 'title') drawTitleMenu();
+  if (state === 'over')  overlay('Game over', 'Score ' + score + '   Best ' + best, 'Tap or press Space to replay Level ' + level);
+  if (state === 'ready') { ctx.textAlign = 'center'; ctx.fillStyle = '#9fb3c8'; ctx.font = '16px system-ui, sans-serif'; ctx.fillText('Space or tap to launch', 240, 640); }
+}
+
+function drawTitleMenu() {
+  ctx.fillStyle = 'rgba(11,16,22,0.92)';
+  ctx.fillRect(40, 220, 400, 420);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 34px system-ui, sans-serif';
+  ctx.fillText('Pocket Pinball', 240, 285);
+  ctx.fillStyle = '#9fb3c8';
+  ctx.font = '16px system-ui, sans-serif';
+  ctx.fillText('Choose a level', 240, 330);
+  MENU_BUTTONS.forEach(button => {
+    const bumperCount = bumperLayouts[button.level - 1].length;
+    ctx.fillStyle = '#172433';
+    ctx.fillRect(button.x, button.y, button.w, button.h);
+    ctx.strokeStyle = '#6fa8ff';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(button.x, button.y, button.w, button.h);
+    ctx.fillStyle = '#ffd166';
+    ctx.font = 'bold 20px system-ui, sans-serif';
+    ctx.fillText('Level ' + button.level, 240, button.y + 27);
+    ctx.fillStyle = '#e8eef5';
+    ctx.font = '14px system-ui, sans-serif';
+    ctx.fillText(bumperCount + ' bumpers', 240, button.y + 49);
+  });
+  ctx.fillStyle = '#9fb3c8';
+  ctx.font = '14px system-ui, sans-serif';
+  ctx.fillText('Tap a level or press 1 / 2 / 3', 240, 615);
 }
 
 function overlay(title, line1, line2) {
